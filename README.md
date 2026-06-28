@@ -80,11 +80,31 @@ come from the graph, not a constant. Change the PR, the score changes.
 
 - **UiPath Maestro Case** — 3 stages: *Analyze Impact → Human Approval →
   Propagate*, with sequential tasks and a human-in-the-loop gate.
-- **API Workflows** — `GuardianImpact` (calls `/impact-pr`) and
-  `GuardianWriteback` (calls `/writeback`) via the unified **HTTP connector**.
+- **UiPath API Workflows** — `GuardianImpact` (calls `/impact-pr`) and
+  `GuardianWriteback` (calls `/writeback`).
+- **Unified HTTP Connector** (Integration Service) — the connection Guardian is
+  called through.
 - **UiPath Action Center** — the *Simple Approval* app shows the risk and
   captures Approve/Reject.
+- **UiPath Studio Web (Solutions)** — the project that holds the case, the
+  workflows, and the app.
 - Runs on **UiPath Automation Cloud**.
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for diagrams (system, sequence, and the
+blast-radius graph).
+
+## Agent type
+
+**Low-code.** The orchestration and agent logic are built entirely with UiPath
+**low-code** components — a Maestro Case, low-code API Workflows, and an Action
+Center app, all authored visually in UiPath Studio Web. They call an external
+custom-coded analysis service (**Oynix Guardian**, Node/TypeScript) over HTTP.
+So: **a low-code UiPath solution integrated with an external coded service** (no
+UiPath Coded Agents are used).
+
+> The solution was *authored* with **Claude Code** via "UiPath for Coding
+> Agents" — that's the development tool, separate from the solution's low-code
+> agent type.
 
 ## Guardian API (`guardian-service`)
 
