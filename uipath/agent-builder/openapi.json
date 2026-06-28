@@ -1,0 +1,133 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Oynix Guardian API",
+    "version": "1.0.0",
+    "description": "Impact-analysis engine for ACME Commerce. Computes the blast radius and risk score of a code change from a real dependency graph, and propagates approved changes. Imported into UiPath Agent Builder as tools the Maestro Case orchestrates."
+  },
+  "servers": [
+    { "url": "https://REPLACE-WITH-NGROK-SUBDOMAIN.ngrok-free.app", "description": "ngrok tunnel to the locally-running Guardian service" }
+  ],
+  "security": [{ "GuardianToken": [] }],
+  "paths": {
+    "/index": {
+      "post": {
+        "operationId": "indexRepository",
+        "summary": "Indexer Agent — (re)build the dependency knowledge graph from the merged code.",
+        "responses": {
+          "200": {
+            "description": "Graph rebuilt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "indexed": { "type": "boolean" },
+                    "nodes": { "type": "integer" },
+                    "edges": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/impact": {
+      "post": {
+        "operationId": "analyzeImpact",
+        "summary": "Impact Analysis Agent — compute blast radius, risk score, and the human-in-the-loop gate decision for a set of changed files.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["changedFiles"],
+                "properties": {
+                  "changedFiles": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Repo-relative paths changed by the merge, e.g. [\"shared-sdk/auth.ts\"]."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Impact analysis",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImpactResult" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/writeback": {
+      "post": {
+        "operationId": "writeBack",
+        "summary": "Propagate an approved change: update the graph, regenerate affected docs, notify AI agents.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["changedFiles", "approved"],
+                "properties": {
+                  "changedFiles": { "type": "array", "items": { "type": "string" } },
+                  "approved": { "type": "boolean", "description": "Must be true (set after human approval or auto-approval for low risk)." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Propagated" },
+          "409": { "description": "Not approved" }
+        }
+      }
+    },
+    "/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "summary": "List active AI agent sessions that may be operating on stale context.",
+        "responses": { "200": { "description": "Sessions" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "GuardianToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-guardian-token"
+      }
+    },
+    "schemas": {
+      "ImpactResult": {
+        "type": "object",
+        "properties": {
+          "changedFiles": { "type": "array", "items": { "type": "string" } },
+          "affectedServices": { "type": "array", "items": { "type": "string" } },
+          "affectedDocs": { "type": "array", "items": { "type": "string" } },
+          "activeAgents": { "type": "array", "items": { "type": "string" } },
+          "riskScore": { "type": "integer", "description": "0-100" },
+          "riskLevel": { "type": "string", "enum": ["LOW", "HIGH"] },
+          "reasons": { "type": "array", "items": { "type": "string" } },
+          "decision": {
+            "type": "object",
+            "properties": {
+              "gate": { "type": "string", "enum": ["AUTO_APPROVE", "REQUIRE_HUMAN"] },
+              "summary": { "type": "string", "description": "Human-readable text to show in the UiPath Action Center approval task." }
+            }
+          }
+        }
+      }
+    }
+  }
+}

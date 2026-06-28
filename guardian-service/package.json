@@ -1,0 +1,25 @@
+{
+  "name": "oynix-guardian-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Oynix Guardian impact-analysis engine for the UiPath AgentHack demo. Builds a real dependency graph of the acme-commerce repo and computes the blast radius + risk score of a merge.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "index": "tsx src/cli-index.ts",
+    "impact": "tsx src/cli-impact.ts"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "js-yaml": "^4.1.0",
+    "neo4j-driver": "^5.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
