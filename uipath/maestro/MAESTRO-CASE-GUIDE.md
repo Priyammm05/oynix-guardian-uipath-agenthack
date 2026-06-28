@@ -4,8 +4,6 @@ This is the click-by-click guide to assemble the orchestration on **UiPath
 Automation Cloud**. It assumes the Guardian service is running locally and
 exposed via ngrok (see root README → "Run the engine").
 
-> Account: `hackathon26_959` on UiPath Automation Cloud.
-
 ---
 
 ## 0. Prerequisites (5 min)

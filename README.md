@@ -113,7 +113,7 @@ docs/                   demo script, Devpost text, submission checklist
 - **UiPath Agent Builder** — Guardian API imported as tools (`analyzeImpact`,
   `writeBack`, `indexRepository`, `listSessions`) via OpenAPI.
 - **UiPath Action Center** — human approval task for high-risk changes.
-- Runs on **UiPath Automation Cloud** (account `hackathon26_959`).
+- Runs on **UiPath Automation Cloud**.
 
 ## Built with coding agents
 
