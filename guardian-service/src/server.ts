@@ -18,7 +18,7 @@ import { dirname, resolve } from "node:path";
 import { buildGraph, type Graph } from "./graph.js";
 import { analyzeImpact, HIGH_RISK_THRESHOLD, type ImpactResult } from "./impact.js";
 import { initNeo4j, syncGraph, markStale, isNeo4jEnabled } from "./neo4j.js";
-import { fetchPrFiles } from "./github.js";
+import { fetchPrFiles, mergePr } from "./github.js";
 
 // Optional Oynix enrichment. The client (./oynix.ts) is gitignored to keep
 // Oynix internals private, so it may be absent in a public checkout — load it
@@ -152,24 +152,46 @@ app.post("/impact-pr", async (req, res) => {
   }
 });
 
-// Write-back: propagate the change once approved (or auto for low risk).
+// Write-back: once approved, merge the PR to main AND propagate the change
+// (update graph, regenerate docs, notify agents). Accepts a prNumber (merges
+// that PR) or an explicit changedFiles list.
 app.post("/writeback", async (req, res) => {
-  const changedFiles: string[] = req.body?.changedFiles ?? [];
   const approved: boolean = req.body?.approved ?? false;
+  const prNumber = Number(req.body?.prNumber);
+  const repo: string | undefined = req.body?.repo;
   if (!approved) {
     return res.status(409).json({ written: false, reason: "not_approved" });
   }
-  const result = analyzeImpact(graph, changedFiles);
-  // "Regenerate" affected docs + refresh context, then clear staleness.
-  await markStale([...staleNodes], false);
-  staleNodes.clear();
-  res.json({
-    written: true,
-    regeneratedDocs: result.affectedDocs,
-    notifiedAgents: result.affectedAgents.map((a) => a.label),
-    refreshedServices: result.affectedServices,
-    message: "Knowledge graph updated, documentation regenerated, AI agents notified.",
-  });
+  try {
+    let changedFiles: string[] = req.body?.changedFiles ?? [];
+    let merge: { merged: boolean; sha?: string } | null = null;
+
+    // PR-driven: fetch the PR's files and actually merge it to main.
+    if (prNumber && !Number.isNaN(prNumber)) {
+      const pr = await fetchPrFiles(prNumber, repo);
+      changedFiles = pr.files;
+      merge = await mergePr(prNumber, repo);
+    }
+
+    const result = analyzeImpact(graph, changedFiles);
+    await markStale([...staleNodes], false);
+    staleNodes.clear();
+
+    res.json({
+      written: true,
+      merged: merge?.merged ?? false,
+      mergeSha: merge?.sha ?? null,
+      prNumber: prNumber || null,
+      regeneratedDocs: result.affectedDocs,
+      notifiedAgents: result.affectedAgents.map((a) => a.label),
+      refreshedServices: result.affectedServices,
+      message: merge?.merged
+        ? "PR merged to main. Knowledge graph updated, documentation regenerated, AI agents notified."
+        : "Knowledge graph updated, documentation regenerated, AI agents notified.",
+    });
+  } catch (e) {
+    res.status(502).json({ written: false, error: "writeback_failed", detail: (e as Error).message });
+  }
 });
 
 // Visualization data.

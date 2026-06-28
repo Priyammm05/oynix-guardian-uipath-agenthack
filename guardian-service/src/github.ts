@@ -40,3 +40,32 @@ export async function fetchPrFiles(
   const files = data.map((f) => normalize(f.filename));
   return { repo, prNumber, files };
 }
+
+export interface MergeResult {
+  merged: boolean;
+  sha?: string;
+  message?: string;
+}
+
+/** Merge a PR into its base branch — the real "propagate to main" on approval. */
+export async function mergePr(
+  prNumber: number,
+  repo: string = DEFAULT_REPO
+): Promise<MergeResult> {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN required to merge a PR");
+  const res = await fetch(`https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "oynix-guardian",
+    },
+    body: JSON.stringify({ merge_method: "merge" }),
+  });
+  const data = (await res.json()) as { merged?: boolean; sha?: string; message?: string };
+  if (!res.ok) {
+    throw new Error(`merge failed ${res.status}: ${data.message ?? JSON.stringify(data)}`);
+  }
+  return { merged: data.merged === true, sha: data.sha, message: data.message };
+}
