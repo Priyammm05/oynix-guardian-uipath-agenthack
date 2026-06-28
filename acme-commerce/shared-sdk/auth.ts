@@ -7,6 +7,7 @@ export interface TokenClaims {
   sub: string;
   scopes: string[];
   exp: number;
+  iss: string; // NEW: issuer claim — tokens without it are now rejected
 }
 
 export interface VerifyResult {
@@ -29,6 +30,10 @@ export function verifyToken(token: string): VerifyResult {
   if (!claims) return { valid: false, reason: "decode_failed" };
   if (claims.exp < Date.now() / 1000) {
     return { valid: false, reason: "expired" };
+  }
+  // NEW: reject tokens that don't declare a trusted issuer.
+  if (claims.iss !== "acme-auth-service") {
+    return { valid: false, reason: "untrusted_issuer" };
   }
   return { valid: true, claims };
 }
