@@ -16,8 +16,34 @@ import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { buildGraph, type Graph } from "./graph.js";
-import { analyzeImpact, HIGH_RISK_THRESHOLD } from "./impact.js";
+import { analyzeImpact, HIGH_RISK_THRESHOLD, type ImpactResult } from "./impact.js";
 import { initNeo4j, syncGraph, markStale, isNeo4jEnabled } from "./neo4j.js";
+import { fetchPrFiles } from "./github.js";
+
+// Optional Oynix enrichment. The client (./oynix.ts) is gitignored to keep
+// Oynix internals private, so it may be absent in a public checkout — load it
+// lazily and fall back to built-in analysis if it isn't there.
+type Enricher = (files: string[]) => Promise<{ used: boolean; source?: string; explanation?: string }>;
+let _enrich: Enricher | null = null;
+let _enrichTried = false;
+async function enrichWithOynix(changedFiles: string[]) {
+  if (!_enrichTried) {
+    _enrichTried = true;
+    try {
+      _enrich = (await import("./oynix.js")).enrichWithOynix as Enricher;
+    } catch {
+      _enrich = null; // file not present in this checkout
+    }
+  }
+  return _enrich ? _enrich(changedFiles) : { used: false };
+}
+
+// Load .env into process.env (Node 20.12+/21.7+ built-in, no dependency).
+try {
+  process.loadEnvFile();
+} catch {
+  /* no .env present — fall back to ambient environment */
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ACME_REPO_PATH = process.env.ACME_REPO_PATH
@@ -65,14 +91,9 @@ app.post("/index", async (_req, res) => {
   });
 });
 
-// Impact Analysis Agent + Decision Engine.
-app.post("/impact", (req, res) => {
-  const changedFiles: string[] = req.body?.changedFiles ?? [];
-  if (!Array.isArray(changedFiles) || changedFiles.length === 0) {
-    return res.status(400).json({ error: "changedFiles[] required" });
-  }
-  const result = analyzeImpact(graph, changedFiles);
-
+// Build the full impact response (shared by /impact and /impact-pr), including
+// the gate decision and an optional Oynix enrichment.
+async function buildImpactResponse(result: ImpactResult, extra: Record<string, unknown> = {}) {
   // mark blast radius stale (for the viz + writeback)
   staleNodes.clear();
   result.affectedServices.forEach((s) => staleNodes.add(s));
@@ -88,11 +109,47 @@ app.post("/impact", (req, res) => {
         `Risk ${result.riskScore}/100. Approve propagation?`
       : `${result.changedFiles.join(", ")} is low risk (${result.riskScore}/100). Safe to propagate automatically.`;
 
-  res.json({
+  // Optional: ask the real Oynix engine to explain the impact (fail-soft).
+  const oynix = await enrichWithOynix(result.changedFiles);
+
+  return {
     ...result,
     threshold: HIGH_RISK_THRESHOLD,
     decision: { gate, summary },
-  });
+    oynix,
+    ...extra,
+  };
+}
+
+// Impact Analysis Agent + Decision Engine — analyze an explicit file list.
+app.post("/impact", async (req, res) => {
+  const changedFiles: string[] = req.body?.changedFiles ?? [];
+  if (!Array.isArray(changedFiles) || changedFiles.length === 0) {
+    return res.status(400).json({ error: "changedFiles[] required" });
+  }
+  const result = analyzeImpact(graph, changedFiles);
+  res.json(await buildImpactResponse(result));
+});
+
+// Analyze a pull request by number: Guardian fetches the PR's changed files
+// from GitHub itself, then runs the impact analysis. This powers the
+// "open a PR -> Guardian checks it" trigger.
+app.post("/impact-pr", async (req, res) => {
+  const prNumber = Number(req.body?.prNumber);
+  const repo: string | undefined = req.body?.repo;
+  if (!prNumber || Number.isNaN(prNumber)) {
+    return res.status(400).json({ error: "prNumber required" });
+  }
+  try {
+    const pr = await fetchPrFiles(prNumber, repo);
+    if (pr.files.length === 0) {
+      return res.status(422).json({ error: "no changed files found for PR", pr });
+    }
+    const result = analyzeImpact(graph, pr.files);
+    res.json(await buildImpactResponse(result, { prNumber: pr.prNumber, repo: pr.repo, prFiles: pr.files }));
+  } catch (e) {
+    res.status(502).json({ error: "github_fetch_failed", detail: (e as Error).message });
+  }
 });
 
 // Write-back: propagate the change once approved (or auto for low risk).
