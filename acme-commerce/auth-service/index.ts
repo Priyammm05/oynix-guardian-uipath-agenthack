@@ -8,5 +8,5 @@ export function issueToken(userId: string, scopes: string[]): string {
     scopes,
     exp: Math.floor(Date.now() / 1000) + 3600,
   };
-  return Buffer.from(JSON.stringify(claims)).toString("base64");
+  return btoa(JSON.stringify(claims)); // string -> base64 (no Node types needed)
 }

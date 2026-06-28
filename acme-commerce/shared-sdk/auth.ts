@@ -39,7 +39,7 @@ export function requireScope(claims: TokenClaims, scope: string): boolean {
 
 function decodeClaims(raw: string): TokenClaims | null {
   try {
-    const json = Buffer.from(raw, "base64").toString("utf8");
+    const json = atob(raw); // base64 -> string (no Node types needed)
     return JSON.parse(json) as TokenClaims;
   } catch {
     return null;
