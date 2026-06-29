@@ -19,6 +19,7 @@ import { buildGraph, type Graph } from "./graph.js";
 import { analyzeImpact, HIGH_RISK_THRESHOLD, type ImpactResult } from "./impact.js";
 import { initNeo4j, syncGraph, markStale, isNeo4jEnabled } from "./neo4j.js";
 import { fetchPrFiles, mergePr } from "./github.js";
+import { regenerateDocs } from "./docgen.js";
 
 // Optional Oynix enrichment. The client (./oynix.ts) is gitignored to keep
 // Oynix internals private, so it may be absent in a public checkout — load it
@@ -174,6 +175,8 @@ app.post("/writeback", async (req, res) => {
     }
 
     const result = analyzeImpact(graph, changedFiles);
+    // Actually stamp the affected docs so the regeneration is visible on disk.
+    const regeneratedDocs = regenerateDocs(ACME_REPO_PATH, result.affectedDocs, prNumber || null);
     await markStale([...staleNodes], false);
     staleNodes.clear();
 
@@ -182,7 +185,7 @@ app.post("/writeback", async (req, res) => {
       merged: merge?.merged ?? false,
       mergeSha: merge?.sha ?? null,
       prNumber: prNumber || null,
-      regeneratedDocs: result.affectedDocs,
+      regeneratedDocs,
       notifiedAgents: result.affectedAgents.map((a) => a.label),
       refreshedServices: result.affectedServices,
       message: merge?.merged
