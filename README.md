@@ -6,6 +6,18 @@
 > Open a pull request → **Oynix Guardian** measures its real blast radius →
 > if it's risky, a human must approve in **UiPath** *before it can merge*.
 
+## What it does
+
+**Oynix Guardian is a governance layer for AI-driven software changes.** When a
+developer (or an AI agent) opens a pull request, a **UiPath Maestro Case** asks
+Guardian to analyze it: Guardian reads the code's real dependency graph and
+computes a **risk score** from how many services, documents, and active AI
+agents depend on the changed file. Low-risk changes propagate automatically;
+**high-risk changes pause for a human to approve in UiPath Action Center before
+the PR can merge to `main`.** It solves a growing problem — AI agents change code
+faster than anyone can check what each change breaks across the organization, so
+risky changes get merged and propagated before a human ever reviews their impact.
+
 ---
 
 ## The problem
@@ -138,30 +150,69 @@ uipath/                 OpenAPI + Maestro Case build guide
 Guardian's engine and the Maestro Case were built with **Claude Code via UiPath
 for Coding Agents**.
 
-## Run it (local + tunnel)
+## Setup & run — step by step (for judges)
 
+### Prerequisites
+- **Node.js 20.12+** (uses the built-in `.env` loader)
+- **ngrok** (free) — to expose the local engine to UiPath Automation Cloud
+- A **GitHub token** (repo scope) — so write-back can merge the PR
+- A **UiPath Automation Cloud** tenant with **Maestro**, **Action Center**, and
+  **Integration Service** enabled *(Action Center needs a license assigned — see
+  note at the end)*
+- *(optional)* Docker — only for the Neo4j graph visual
+
+### Part A — Run the Guardian engine (≈3 min)
 ```bash
-# 1. Start the impact engine
 cd guardian-service
-cp .env.example .env          # set GUARDIAN_TOKEN
+cp .env.example .env
+# edit .env and set:
+#   GUARDIAN_TOKEN=demo-guardian-secret      (shared secret UiPath sends)
+#   GITHUB_TOKEN=<your GitHub PAT, repo scope> (lets write-back merge the PR)
+#   GUARDIAN_PR_REPO=<owner>/<repo>           (the repo PRs are opened against)
 npm install
-npm start                     # http://localhost:8090
-
-# 2. (optional) graph visual
-docker compose up -d          # Neo4j at http://localhost:7474
-
-# 3. Expose to UiPath Automation Cloud
-ngrok http 8090               # use the https URL in the UiPath HTTP connection
+npm start                                     # → http://localhost:8090
 ```
-
-Quick check:
-
+Sanity-check the engine without UiPath:
 ```bash
 npm run impact -- shared-sdk/auth.ts            # → HIGH, risk 82
 npm run impact -- notification-service/index.ts # → LOW, risk 10
 ```
 
-Then follow [`uipath/maestro/MAESTRO-CASE-GUIDE.md`](uipath/maestro/MAESTRO-CASE-GUIDE.md).
+### Part B — Expose it to UiPath (≈1 min)
+```bash
+ngrok http 8090        # copy the https://....ngrok-free.app URL
+```
+*(Tip: reserve a free static domain so the URL doesn't change on restart:
+`ngrok http --domain=<your-domain> 8090`.)*
+
+### Part C — Wire UiPath (≈30 min, one time)
+Full click-by-click is in
+[`uipath/maestro/MAESTRO-CASE-GUIDE.md`](uipath/maestro/MAESTRO-CASE-GUIDE.md).
+In short:
+1. **Integration Service → HTTP connector → new connection** ("Guardian"): set
+   Base URL = your ngrok URL, Auth = API Key, header `x-guardian-token` =
+   `demo-guardian-secret`.
+2. **Studio Web → new Solution** with two **API Workflows**, each an HTTP Request:
+   - `GuardianImpact` → POST `<ngrok>/impact-pr`, body `{"prNumber": <PR#>}`
+   - `GuardianWriteback` → POST `<ngrok>/writeback`, body `{"prNumber": <PR#>, "approved": true}`
+3. **Maestro Case** with 3 stages: **Analyze Impact** (runs GuardianImpact) →
+   **Human Approval** (Action Center *Simple Approval* app, assigned to you) →
+   **Propagate** (runs GuardianWriteback).
+4. **Publish.**
+
+### Part D — Run the demo end to end
+1. Open a PR against `main` that changes `shared-sdk/auth.ts` (note its number;
+   put that number in both workflow bodies, then Publish).
+2. Run the Maestro Case (**Debug on cloud**).
+3. It computes **risk 82** → pauses at **Human Approval**.
+4. Open **Actions**, review the risk, click **Approve**.
+5. Write-back **merges the PR to main** and stamps the affected docs.
+
+### Note on Action Center
+Maestro's human approval requires **Action Center**. If your tenant doesn't have
+it: Admin → tenant → **Services → Add services → Actions**, then Admin →
+**Licenses** → assign a license that includes Action Center (e.g. **Pro**) to
+your user.
 
 ## Privacy
 
