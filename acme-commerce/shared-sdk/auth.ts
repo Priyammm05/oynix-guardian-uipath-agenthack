@@ -50,3 +50,7 @@ function decodeClaims(raw: string): TokenClaims | null {
     return null;
   }
 }
+
+export function requireAllScopes(claims: TokenClaims, scopes: string[]): boolean {
+  return scopes.every((s) => claims.scopes.includes(s));
+}
