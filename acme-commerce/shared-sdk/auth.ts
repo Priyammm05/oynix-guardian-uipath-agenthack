@@ -39,7 +39,11 @@ export function verifyToken(token: string): VerifyResult {
 }
 
 export function requireScope(claims: TokenClaims, scope: string): boolean {
-  return claims.scopes.includes(scope);
+  // BREAKING CHANGE: scopes are now namespaced under "acme:". Existing tokens
+  // carry bare scopes like "checkout:write", so every service that calls
+  // requireScope with the old name will now be DENIED until callers and issued
+  // tokens are migrated. Directly breaks checkout, payment, and order.
+  return claims.scopes.includes(`acme:${scope}`);
 }
 
 function decodeClaims(raw: string): TokenClaims | null {
@@ -49,4 +53,8 @@ function decodeClaims(raw: string): TokenClaims | null {
   } catch {
     return null;
   }
+}
+
+export function requireAllScopes(claims: TokenClaims, scopes: string[]): boolean {
+  return scopes.every((s) => claims.scopes.includes(s));
 }
